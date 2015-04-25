@@ -4,9 +4,8 @@ library(topicmodels)
 library(e1071)
 library(optpart)
 library(cluster)
-
+library(stats)
 reuters<-read.csv("reutersCSV.csv")
-
 #1.Preprocessing=========================================================
 #remove 0 topics
 rtcol<-reuters[,4:138]
@@ -84,7 +83,6 @@ write.csv(LDATrain, "LDATrain.csv", row.names = F)
 write.csv(LDATest, "LDATest.csv", row.names = F)
 # finish the pre-processsing of the dataset
 #then use naiveBayes,SVM, randomForest to predict the tags
-
 # naiveBayes 
 classifierNB <- naiveBayes(topic ~ ., data = LDATrain)
 classifierNBtable<- table(predict(classifierNB, LDATest), LDATest$topic, dnn=list('predicted','actual'))
@@ -96,6 +94,29 @@ classifierSVMtable <- table (predict(classifierSVM, LDATest) , LDATest$topic)
 #randomForest
 classifierRF<- randomForest (topic ~ .,LDATrain)
 classifierRFtable <- table (predict(classifierRF, LDATest) , LDATest$topic)
+
+# 10 fold cross-validation evaluation function (exercise 7)  #not used#
+eval <-function(datatable){
+  precision<-as.data.frame(matrix(0,10,10)) #store results
+  recall<-as.data.frame(matrix(0,10,10))
+  fmeasure<-as.data.frame(matrix(0,10,10))
+  fprecision<-c(1:10)
+  frecall<-c(1:10)
+  ffmeasure<-c(1:10)
+  acc<-0
+  dfrf<-as.data.frame(datatable)
+      #calculate the recall Precision and F-measure value according to the fussion matrix
+      for(j in 1:10){
+        TP<-dfrf[1+(j-1)*9,3]
+        FP<-sum(dfrf[dfrf[,2] == dfrf[1+(j-1)*9,1],3]) - TP
+        FN<-sum(dfrf[dfrf[,1] == dfrf[1+(j-1)*9,1],3]) - TP
+        precision[j,i]<-TP/(TP+FP)
+        recall[j,i]<-TP/(TP+FN)
+        fmeasure[j,i]<-2*precision[j,i]*recall[j,i]/(precision[j,i]+recall[j,i])
+		acc<-acc+TP
+      }
+    }
+  }
 
 # 4.Cluster===================================================
 #LDA combines TF*IDF

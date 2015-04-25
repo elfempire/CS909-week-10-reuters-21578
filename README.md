@@ -6,5 +6,3 @@ library(topicmodels)
 library(e1071)
 library(optpart)
 library(cluster)
-
-LDATrain and LDATest are the dataset for Task 3

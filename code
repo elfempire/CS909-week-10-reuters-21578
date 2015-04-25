@@ -1,0 +1,117 @@
+library(tm)
+library(SnowballC)
+library(topicmodels)
+library(e1071)
+library(optpart)
+library(cluster)
+
+reuters<-read.csv("reutersCSV.csv")
+
+#1.Preprocessing=========================================================
+#remove 0 topics
+rtcol<-reuters[,4:138]
+rtcol<-rtcol[,colSums(rtcol[,1:135])!=0]
+reuters<-cbind(reuters[,1:3],rtcol,reuters[,139:140])
+reuters<-reuters[rowSums(reuters[2:21578,4:121])!=0,]
+#reuters 11339 obs. 123 variables
+reuters<-reuters[reuters[,122]!="",] #remove blank titles
+#reuters 11209 obs. 123 variables
+ 
+reutersCorpus<-Corpus(VectorSource(reuters[,123])) #create corpus 
+#use tm_map to obtain the main words
+reutersCorpus <- tm_map(reutersCorpus, stripWhitespace)
+reutersCorpus <- tm_map(reutersCorpus, tolower)
+reutersCorpus <- tm_map(reutersCorpus, removePunctuation)
+reutersCorpus <- tm_map(reutersCorpus, removeNumbers)
+reutersCorpus <- tm_map(reutersCorpus, stemDocument)
+reutersCorpus <- tm_map(reutersCorpus,PlainTextDocument)
+# Create a customised stopwords object to remove words
+newstop <-c(stopwords('english'),"available","via","Reuter","reuter","report","reported","january","february","march","april","may","june","july","september","october","november","december","month","months","year","years","one","two","three","four","five","six","seven","eight","nine","ten","also","will","week","now","due","today","next","per","said","since","told","take") #some stop words from the lda reults
+reutersCorpus <-tm_map(reutersCorpus,removeWords,newstop)
+
+# 2.Features=============================================================
+# bulid word frequency matix and delete sparse features
+dtm<-DocumentTermMatrix(reutersCorpus)
+dtm2<-removeSparseTerms(dtm,sparse=0.95)
+sumrows <- apply(dtm2, 1, sum)
+dtm2 <- dtm2[sumrows!=0, ] #remove the rows that all data is 0
+
+#TF*IDF features
+reutersTFIDF<-weightTfIdf(dtm) #Weight a term-document matrix by term frequency - inverse document frequency (TF-IDF)
+reutersTFIDF2<-removeSparseTerms(reutersTFIDF,sparse=0.95) #remove sparse word
+rtTFIDF<-as.data.frame(inspect(reutersTFIDF2)) #transfer to standard dataset for evaluating classifers
+# 11209 obs. 103 vaiables
+
+
+# LDA features
+reutersLDA<-LDA(dtm2,10, method = "Gibbs") # top 10 high frequency topics
+LDAword<-as.vector(terms(reutersLDA, 50)) # top 50 high frequency words
+LDAdtm<- DocumentTermMatrix(reutersCorpus, list(dictionary= LDAword)) # Create an LDA feature based document term matrix using the LDAword as a dictionary to restrict the words
+rtLDA<-as.data.frame(inspect(LDAdtm)) #transfer to standard dataset for evaluating classifers
+# 11209 obs. 103 vaiables
+
+# 3.Classifier===========================================================
+# pre-processing of prediction
+# 10 most populous classes
+toptopics<-c("topic.earn", "topic.acq", "topic.money.fx", "topic.grain", "topic.crude", "topic.trade", "topic.interest", "topic.ship", "topic.wheat", "topic.corn")
+
+re<-reuters[,4:121]
+re<-re[,names(re[,1:118]) %in% toptopics]
+rttoptopics<-cbind(reuters[,3],re) #matrix of top 10 topics
+
+rtLDAtop<-cbind(rttoptopics, rtLDA)
+rtLDAtop[,"topic"]<-"" # add a column to save the related topic of each row
+# 1-purpose, 2:11-Top10 topics, 12:114-LDA features, 115-topic
+# save the topics to “topic”column 115
+for(i in 1:nrow(rtLDAtop)){
+     for(j in 2:11){
+        if(rtLDAtop[i,j]==1)
+             rtLDAtop[i,115]<-colnames(rtLDAtop)[j]
+    }
+}
+#11209 rows, 115 columns
+
+rtLDAtop<-rtLDAtop[rtLDAtop[,115]!="",] #remove the rows without topics
+# 5298 rows, 115 columns
+#split the dataset according to different purpose, train and test
+LDATrain<-rtLDAtop[which(rtLDAtop[,1]=="train"),]
+LDATrain<-LDATrain[,12:115]
+# 3716 rows, 104 columns
+LDATest<-rtLDAtop[which(rtLDAtop[,1]=="test"),]
+LDATest<-LDATest[,12:115]
+# 1311 rows, 104 columns
+# finish the pre-processsing of the dataset
+#then use naiveBayes,SVM, randomForest to predict the tags
+# naiveBayes 
+classifierNB <- naiveBayes(topic ~ ., data = LDATrain)
+classifierNBtable<- table(predict(classifierNB, LDATest), LDATest$topic, dnn=list('predicted','actual'))
+
+#SVM
+classifierSVM<- svm(topic ~ .,LDATrain)
+classifierSVMtable <- table (predict(classifierSVM, LDATest) , LDATest$topic)
+
+#randomForest
+classifierRF<- randomForest (topic ~ .,LDATrain)
+classifierRFtable <- table (predict(classifierRF, LDATest) , LDATest$topic)
+
+# 4.Cluster===================================================
+#LDA combines TF*IDF
+clusterLDATFIDF<-cbind(rtLDA, rtTFIDF)
+d <- dist(clusterLDATFIDF)
+
+#K-means
+clusterKM <- kmeans(clusterLDATFIDF, 10)
+silKM <- silhouette(clusterKM$cluster, d) #evaluaion
+
+#Hierarchical Agglomerative
+clusterH <- hclust(d)
+clusterHA <- cutree(clusterH, k = 10)
+silHA <- silhouette(clusterHA, d) #evaluaion
+
+#PAM
+clusterPAM <- pam(clusterLDATFIDF, 10)
+silPAM <- silhouette(clusterPAM$cluster, d) #evaluaion
+
+
+
+

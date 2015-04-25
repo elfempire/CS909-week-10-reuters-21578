@@ -80,8 +80,11 @@ LDATrain<-LDATrain[,12:115]
 LDATest<-rtLDAtop[which(rtLDAtop[,1]=="test"),]
 LDATest<-LDATest[,12:115]
 # 1311 rows, 104 columns
+write.csv(LDATrain, "LDATrain.csv", row.names = F)
+write.csv(LDATest, "LDATest.csv", row.names = F)
 # finish the pre-processsing of the dataset
 #then use naiveBayes,SVM, randomForest to predict the tags
+
 # naiveBayes 
 classifierNB <- naiveBayes(topic ~ ., data = LDATrain)
 classifierNBtable<- table(predict(classifierNB, LDATest), LDATest$topic, dnn=list('predicted','actual'))
